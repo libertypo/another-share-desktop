@@ -1,0 +1,27 @@
+Another Share - Version History
+
+v0.1.8.0
+- Comprehensive Privacy & Security Audit:
+  * Replaced all legacy `innerHTML` usage with safer DOM manipulation (`textContent`) to prevent XSS vulnerabilities.
+  * Extended privacy masking in logs to automatically scrub 'token', 'key', 'password', 'auth', and 'email' fields.
+  * Robust Title Parsing: Preserves full titles (e.g., "News / World") while ensuring safe filename generation.
+  * Optimized background runtime by removing unused IndexedDB modules and legacy code blocks.
+- New Privacy Control: Choose between "Moderate" (Essential Sites) and "Strict" (Maximum Privacy) protection levels.
+- Added "Read Later" list: Save up to 50 articles offline.
+- Added "Copy as Markdown": Quickly copy title and URL in Markdown format.
+- Improved Notifications: Replaced alerts with non-intrusive toast messages.
+
+v0.1.7.9
+- Refined Context Menu architecture for faster access.
+- Maintenance Release.
+
+v0.1.7.8
+- Removed "Copy Link" and "Email" share options to streamline the interface.
+- Logging facility is now strictly opt-in. A one-time reset has been applied to ensure privacy.
+- Enhanced privacy controls.
+
+v0.1.7.7
+- Maintenance release.
+
+v0.1.0.0
+- Initial Release
