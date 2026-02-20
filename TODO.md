@@ -25,9 +25,9 @@ This list contains potential features and enhancements for future releases. Item
 - [ ] **Local RSS Feed**: Generate a local-only RSS endpoint for the "Read Later" list.
 
 ## Platform Expansion
-- [ ] **Chromium Port**: Implement the Service Worker wrapper and API shim for Chrome, Edge, Brave, and Arc.
-- [ ] **Safari / iOS Port**: Investigate requirements for porting to the Apple Ecosystem.
-- [ ] **Self-Hosted Sync**: Enable syncing via WebDAV or Nextcloud to keep data private while sharing across devices.
+*There will be no platform expansion for now! Chrome is a lot more pickier in regards to extensions and maybe a bit more limited with Manifest v3*
+
+*Integration & Export will be tackled in the next version*
 
 
 
