@@ -29,5 +29,5 @@ This list contains potential features and enhancements for future releases. Item
 - [ ] **Safari / iOS Port**: Investigate requirements for porting to the Apple Ecosystem.
 - [ ] **Self-Hosted Sync**: Enable syncing via WebDAV or Nextcloud to keep data private while sharing across devices.
 
----
-*Pick an item to start working on it in the next session!*
+
+
