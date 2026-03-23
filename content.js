@@ -357,8 +357,32 @@ function getMetadata() {
     };
 }
 
+function sanitizeInterceptedShareDetail(detail) {
+    if (!detail || typeof detail !== 'object') return null;
+
+    const title = typeof detail.title === 'string' ? detail.title.trim().slice(0, 400) : '';
+    const text = typeof detail.text === 'string' ? detail.text.trim().slice(0, 12000) : '';
+    const url = typeof detail.url === 'string' ? detail.url.trim().slice(0, 2048) : '';
+
+    if (url) {
+        try {
+            const parsed = new URL(url);
+            if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+        } catch {
+            return null;
+        }
+    }
+
+    return { title, text, url };
+}
+
+const CONTENT_ALLOWED_ACTIONS = new Set(["getMetadata", "notifyThread", "triggerShareSheet"]);
+const CONTENT_EVENT_TOKEN = 'extension_intercepted_share_' + Math.random().toString(36).slice(2, 15);
+
 // Listen for messages from the popup or background
 browser.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (!request || typeof request !== 'object' || !CONTENT_ALLOWED_ACTIONS.has(request.action)) return false;
+
     if (request.action === "getMetadata") {
         Logger.info("Content script metadata requested.");
         sendResponse(getMetadata());
@@ -381,10 +405,17 @@ async function initialize() {
         return;
     }
 
+    const tokenScript = document.createElement('script');
+    tokenScript.textContent = `window.__ANOTHER_SHARE_TOKEN__ = '${CONTENT_EVENT_TOKEN}';`;
+    (document.head || document.documentElement).appendChild(tokenScript);
+    tokenScript.remove();
+
     // Listen for intercepted Navigator Share
-    window.addEventListener('extension_intercepted_share', (e) => {
+    window.addEventListener(CONTENT_EVENT_TOKEN, (e) => {
         Logger.info("Intercepted navigator.share call.");
-        showShareSheet(e.detail.title, e.detail.url, e.detail.text);
+        const payload = sanitizeInterceptedShareDetail(e.detail);
+        if (!payload) return;
+        showShareSheet(payload.title, payload.url, payload.text);
     });
 }
 

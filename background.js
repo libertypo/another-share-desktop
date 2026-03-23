@@ -17,6 +17,47 @@ const TRACKING_PARAMS = [
     '_ga', '_gl', 'yclid', 'ref', 'source', 'original_referrer'
 ];
 
+const ALLOWED_ACTIONS = new Set(["getPlatforms", "addToReadLater", "captureVisible", "performShare"]);
+
+function isObject(value) {
+    return typeof value === "object" && value !== null;
+}
+
+function isAllowedSender(sender) {
+    return !!sender && sender.id === browser.runtime.id;
+}
+
+function hasValidTab(sender) {
+    return !!sender && !!sender.tab && Number.isInteger(sender.tab.id);
+}
+
+function sanitizeString(value, maxLength = 4000) {
+    if (typeof value !== "string") return "";
+    return value.trim().slice(0, maxLength);
+}
+
+function isAllowedHttpUrl(url) {
+    if (!url) return false;
+    try {
+        const parsed = new URL(url);
+        return parsed.protocol === "http:" || parsed.protocol === "https:";
+    } catch {
+        return false;
+    }
+}
+
+function sanitizeReadLaterItem(item) {
+    if (!isObject(item)) return null;
+
+    const title = sanitizeString(item.title, 400);
+    const url = sanitizeString(item.url, 2048);
+    const timestamp = Number.isFinite(item.timestamp) ? item.timestamp : Date.now();
+
+    if (!isAllowedHttpUrl(url)) return null;
+
+    return { title, url, timestamp };
+}
+
 function cleanUrl(urlStr) {
     if (!urlStr || urlStr.startsWith('file://')) return '';
     try {
@@ -65,6 +106,10 @@ const platforms = {
 };
 // Message listeners for Content Script Interception
 browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (!isAllowedSender(sender) || !isObject(message) || !ALLOWED_ACTIONS.has(message.action)) {
+        return false;
+    }
+
     console.log("[Another Share] Message received in background:", message.action);
 
     if (message.action === "getPlatforms") {
@@ -73,7 +118,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (message.action === "addToReadLater") {
-        const { item } = message;
+        const item = sanitizeReadLaterItem(message.item);
         if (!item) return false;
 
         browser.storage.local.get('readLater').then(data => {
@@ -96,6 +141,8 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (message.action === "captureVisible") {
+        if (!hasValidTab(sender)) return false;
+
         const windowId = sender.tab ? sender.tab.windowId : null;
         browser.tabs.captureVisibleTab(windowId, { format: "png" }).then(dataUrl => {
             browser.tabs.create({ url: dataUrl });
@@ -105,7 +152,12 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return false;
     }
     if (message.action === "performShare") {
-        const { platformId, title, url, text } = message;
+        const platformId = sanitizeString(message.platformId, 100);
+        const title = sanitizeString(message.title, 400);
+        const url = sanitizeString(message.url, 2048);
+        const text = sanitizeString(message.text, 12000);
+
+        if (!platformId) return false;
 
         if (platformId === 'share-markdown') {
             // Handled client side basically, but if needed here
@@ -121,7 +173,10 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 // Threading needed
                 const chunks = chunkText(text, platformId, title, cleanedUrl);
                 if (chunks.length > 1) {
-                    browser.tabs.create({ url: platforms[pureId](title, cleanedUrl, chunks[0].text) });
+                    const threadUrl = platforms[pureId](title, cleanedUrl, chunks[0].text);
+                    if (!isAllowedHttpUrl(threadUrl) || !hasValidTab(sender)) return false;
+
+                    browser.tabs.create({ url: threadUrl });
                     // Notify user via content script
                     browser.tabs.sendMessage(sender.tab.id, {
                         action: "notifyThread",
@@ -137,6 +192,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 }
             }
             const shareUrl = platforms[pureId](title, cleanedUrl, text);
+            if (!isAllowedHttpUrl(shareUrl)) return false;
             browser.tabs.create({ url: shareUrl });
         }
         return false;
