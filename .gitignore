@@ -1,6 +1,7 @@
 *.xpi
 web-ext-artifacts/
 node_modules/
+.githooks/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
