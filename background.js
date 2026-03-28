@@ -1,10 +1,14 @@
+const EXTENSION_VERSION = (browser && browser.runtime && browser.runtime.getManifest)
+    ? browser.runtime.getManifest().version
+    : "unknown";
+
 // Verified Background Script Start
-console.log("[Another Share] Background script initializing...");
+Logger.info(`Background script initializing... v${EXTENSION_VERSION}`);
 
 const PLATFORMS_DATA = {
     'share-x': { title: 'X', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.045 4.126H5.078z" /></svg>', limit: 280, urlWeight: 23 },
     'share-bluesky': { title: 'Bluesky', icon: '<svg width="20" height="20" viewBox="0 0 54 54" fill="currentColor"><path d="M13.851 6.54c-7.352 5.09-10.42 16.58-1.571 25.6 5.864 5.96 11.83 5.02 14.72 1.34 2.89 3.68 8.856 4.62 14.72-1.34 8.847-9.02 5.782-20.51-1.572-25.6C34.225 2.37 28.52 7.14 27 10.61c-1.52-3.47-7.225-8.24-13.149-4.07z" /></svg>', limit: 300 },
-    'share-mastodon': { title: 'Mastodon', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M23.268 5.313c-.35-2.578-2.617-4.61-5.304-5.004C17.51.242 15.792 0 11.813 0h-.03c-3.98 0-4.835.242-5.288.309C3.882.692 1.496 2.518.917 5.127c-.64 2.863-.51 5.821-.51 8.656 0 1.09.025 2.189.071 3.291.086 1.903.163 3.81.487 5.704.211 1.281 1.31 2.393 2.602 2.496 2.819.227 5.545.29 8.183.193 2.636.092 5.372.031 8.193-.193 1.292-.103 2.391-1.215 2.602-2.496.423-2.553.483-5.182.483-7.727 0-3.45.05-6.864-.571-9.942zm-2.366 9.292c0 .882 0 1.76-.016 2.646-.014.215-.014.43-.03.645-.071.867-.103 1.734-.21 2.6-.014.065-.014.13-.015.196-.029.13-.014.26-.062.39-.105.56-.618.995-1.18.995-.347 0-.693-.014-1.04-.014l-2.482.042c-2.422.055-4.845.07-7.265.053l-1.477-.042c-.56-.03-.99-.54-.99-1.1v-8.4c0-.56.45-1.01 1.01-1.01h2.52c.56 0 1.01.45 1.01 1.01v4.98c0 .285.2Shell.31.5.31.185 0 .3-.025.5-.31v-4.98c0-.56.45-1.01 1.01-1.01h2.52c.56 0 1.01.45 1.01 1.01z" /></svg>', limit: 500 },
+    'share-mastodon': { title: 'Mastodon', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M23.268 5.313c-.35-2.578-2.617-4.61-5.304-5.004C17.51.242 15.792 0 11.813 0h-.03c-3.98 0-4.835.242-5.288.309C3.882.692 1.496 2.518.917 5.127c-.64 2.863-.51 5.821-.51 8.656 0 1.09.025 2.189.071 3.291.086 1.903.163 3.81.487 5.704.211 1.281 1.31 2.393 2.602 2.496 2.819.227 5.545.29 8.183.193 2.636.092 5.372.031 8.193-.193 1.292-.103 2.391-1.215 2.602-2.496.423-2.553.483-5.182.483-7.727 0-3.45.05-6.864-.571-9.942zm-2.366 9.292c0 .882 0 1.76-.016 2.646-.014.215-.014.43-.03.645-.071.867-.103 1.734-.21 2.6-.014.065-.014.13-.015.196-.029.13-.014.26-.062.39-.105.56-.618.995-1.18.995-.347 0-.693-.014-1.04-.014l-2.482.042c-2.422.055-4.845.07-7.265.053l-1.477-.042c-.56-.03-.99-.54-.99-1.1v-8.4c0-.56.45-1.01 1.01-1.01h2.52c.56 0 1.01.45 1.01 1.01v4.98c0 .285.2.31.5.31.185 0 .3-.025.5-.31v-4.98c0-.56.45-1.01 1.01-1.01h2.52c.56 0 1.01.45 1.01 1.01z" /></svg>', limit: 500 },
     'share-whatsapp': { title: 'WhatsApp', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" /></svg>' },
     'share-linkedin': { title: 'LinkedIn', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z" /></svg>' },
     'share-facebook': { title: 'Facebook', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" /></svg>' },
@@ -18,6 +22,13 @@ const TRACKING_PARAMS = [
 ];
 
 const ALLOWED_ACTIONS = new Set(["getPlatforms", "addToReadLater", "captureVisible", "performShare"]);
+const BLUESKY_COMPOSE_URL = "https://bsky.app/intent/compose?text=";
+const X_INTENT_URL = "https://twitter.com/intent/tweet";
+const MAX_CAPTURE_MB = 12;
+
+// Rate limiting map for share actions (prevents rapid-fire posting)
+const shareRateLimits = new Map();
+const SHARE_RATE_LIMIT_MS = 500; // Throttle shares to 500ms apart per platform
 
 function isObject(value) {
     return typeof value === "object" && value !== null;
@@ -34,6 +45,53 @@ function hasValidTab(sender) {
 function sanitizeString(value, maxLength = 4000) {
     if (typeof value !== "string") return "";
     return value.trim().slice(0, maxLength);
+}
+
+function truncateForPlatformLimit(text, limit) {
+    if (typeof text !== "string" || !Number.isFinite(limit) || limit <= 0) {
+        return typeof text === "string" ? text : "";
+    }
+    if (text.length <= limit) return text;
+    if (limit <= 1) return text.slice(0, limit);
+    return `${text.slice(0, limit - 1)}…`;
+}
+
+function buildBlueskyShareText(title, url, quote) {
+    const body = quote ? `"${quote}" — ${title}` : title;
+    return url ? `${body} ${url}` : body;
+}
+
+function buildBlueskyComposeUrl(shareText) {
+    const normalized = typeof shareText === "string" ? shareText : "";
+    return `${BLUESKY_COMPOSE_URL}${encodeURIComponent(normalized)}`;
+}
+
+async function openBlueskyShareFallback(sender, title, url, quote, message) {
+    if (!hasValidTab(sender)) return false;
+
+    const limit = (PLATFORMS_DATA['share-bluesky'] && PLATFORMS_DATA['share-bluesky'].limit) || 300;
+    const shareText = truncateForPlatformLimit(buildBlueskyShareText(title, url, quote), limit);
+    let copiedToClipboard = false;
+
+    try {
+        await browser.scripting.executeScript({
+            target: { tabId: sender.tab.id },
+            func: (textToCopy) => navigator.clipboard.writeText(textToCopy),
+            args: [shareText]
+        });
+        copiedToClipboard = true;
+    } catch (error) {
+        Logger.warn("Bluesky clipboard copy failed in background fallback.", error);
+    }
+
+    await browser.tabs.create({ url: buildBlueskyComposeUrl(shareText) });
+    browser.tabs.sendMessage(sender.tab.id, {
+        action: "notifyThread",
+        message: copiedToClipboard
+            ? message
+            : `${message} Clipboard copy failed, but Bluesky compose opened with prefilled text.`
+    }).catch(() => {});
+    return false;
 }
 
 function isAllowedHttpUrl(url) {
@@ -71,14 +129,18 @@ function cleanUrl(urlStr) {
 
 const platforms = {
     x: (title, url, quote) => {
-        const text = quote ? `"${quote}" — ${title}` : title;
-        const urlPart = url ? `&url=${encodeURIComponent(url)}` : "";
-        return `https://x.com/intent/post?text=${encodeURIComponent(text)}${urlPart}`;
+        let text;
+        if (quote) {
+            text = url ? `"${quote}" ${url}` : `"${quote}" — ${title}`;
+        } else {
+            text = url || title;
+        }
+        return `${X_INTENT_URL}?text=${encodeURIComponent(text)}`;
     },
     bluesky: (title, url, quote) => {
-        const body = quote ? `"${quote}" — ${title}` : title;
-        const text = url ? `${body} ${url}` : body;
-        return `https://bsky.app/intent/compose?text=${encodeURIComponent(text)}`;
+        const limit = (PLATFORMS_DATA['share-bluesky'] && PLATFORMS_DATA['share-bluesky'].limit) || 300;
+        const shareText = truncateForPlatformLimit(buildBlueskyShareText(title, url, quote), limit);
+        return buildBlueskyComposeUrl(shareText);
     },
     mastodon: (title, url, quote) => {
         const body = quote ? `"${quote}" — ${title}` : title;
@@ -110,7 +172,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return false;
     }
 
-    console.log("[Another Share] Message received in background:", message.action);
+    Logger.info("Background message received.", { action: message.action });
 
     if (message.action === "getPlatforms") {
         sendResponse({ platforms: PLATFORMS_DATA });
@@ -145,9 +207,19 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
         const windowId = sender.tab ? sender.tab.windowId : null;
         browser.tabs.captureVisibleTab(windowId, { format: "png" }).then(dataUrl => {
+            // Safety: Check size of screenshot data URL
+            const sizeInMB = Math.round(dataUrl.length / 1024 / 1024 * 100) / 100;
+            if (sizeInMB > MAX_CAPTURE_MB) {
+                Logger.warn("Blocked oversized screenshot capture.", { sizeInMB, maxMB: MAX_CAPTURE_MB });
+                browser.tabs.sendMessage(sender.tab.id, {
+                    action: "notifyThread",
+                    message: `Screenshot too large (${sizeInMB}MB). Try viewport capture or a shorter page.`
+                }).catch(() => {});
+                return;
+            }
             browser.tabs.create({ url: dataUrl });
         }).catch(err => {
-            console.error("[Another Share] Capture failed:", err);
+            Logger.error("Capture failed in background handler.", err);
         });
         return false;
     }
@@ -159,6 +231,15 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
         if (!platformId) return false;
 
+        // Rate limiting: Prevent rapid-fire shares
+        const lastShareTime = shareRateLimits.get(platformId) || 0;
+        const timeSinceLastShare = Date.now() - lastShareTime;
+        if (timeSinceLastShare < SHARE_RATE_LIMIT_MS) {
+            // Silently skip to prevent DoS
+            return false;
+        }
+        shareRateLimits.set(platformId, Date.now());
+
         if (platformId === 'share-markdown') {
             // Handled client side basically, but if needed here
             return false;
@@ -167,6 +248,29 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const pureId = platformId.replace("share-", "");
         const cleanedUrl = cleanUrl(url);
         const config = PLATFORMS_DATA[platformId];
+
+        if (platformId === "share-bluesky") {
+            if (config && config.limit && text && text.length > config.limit - 50) {
+                const chunks = chunkText(text, platformId, title, cleanedUrl);
+                if (chunks.length > 1) {
+                    return openBlueskyShareFallback(
+                        sender,
+                        chunks[0].meta,
+                        cleanedUrl,
+                        chunks[0].text,
+                        `Bluesky compose opened for Part 1. Publish it, then reopen sharing for the next part.`
+                    );
+                }
+            }
+
+            return openBlueskyShareFallback(
+                sender,
+                title,
+                cleanedUrl,
+                text,
+                "Bluesky compose opened with your post text."
+            );
+        }
 
         if (platforms[pureId]) {
             if (config && config.limit && text && text.length > config.limit - 50) {
@@ -181,12 +285,16 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     browser.tabs.sendMessage(sender.tab.id, {
                         action: "notifyThread",
                         message: `Thread Started! ${chunks.length} parts created. Part 1 opened. Part 2 copied to clipboard.`
+                    }).catch((err) => {
+                        Logger.warn("Thread notification failed.", err);
                     });
                     // Actually copy part 2
                     browser.scripting.executeScript({
                         target: { tabId: sender.tab.id },
                         func: (t) => navigator.clipboard.writeText(t),
                         args: [chunks[1].text]
+                    }).catch((err) => {
+                        Logger.warn("Thread clipboard copy failed.", err);
                     });
                     return false;
                 }
@@ -210,7 +318,13 @@ function chunkText(quote, platformId, title, url) {
 
     while (remaining.length > 0) {
         const reserved = title.length + (partNum === 1 ? urlLen + 18 : 16);
-        const maxChunkLen = config.limit - reserved;
+        let maxChunkLen = config.limit - reserved;
+
+        // Safety guard: avoid non-progress loops when metadata consumes limit.
+        if (maxChunkLen <= 0) {
+            const hardCap = Math.max(20, Math.floor(config.limit * 0.5));
+            maxChunkLen = Math.min(remaining.length, hardCap);
+        }
 
         if (remaining.length <= maxChunkLen) {
             chunks.push(remaining);
@@ -220,6 +334,11 @@ function chunkText(quote, platformId, title, url) {
         let cutIdx = maxChunkLen;
         const lastSpace = remaining.lastIndexOf(' ', maxChunkLen);
         if (lastSpace > maxChunkLen * 0.7) cutIdx = lastSpace;
+
+        // Ensure forward progress for extreme or malformed inputs.
+        if (cutIdx <= 0) {
+            cutIdx = Math.min(remaining.length, Math.max(20, maxChunkLen));
+        }
 
         chunks.push(remaining.substring(0, cutIdx).trim());
         remaining = remaining.substring(cutIdx).trim();
@@ -235,12 +354,14 @@ function chunkText(quote, platformId, title, url) {
 
 // Context Menus
 browser.runtime.onInstalled.addListener(() => {
-    console.log("[Another Share] Extension installed.");
+    Logger.info("Extension installed.");
     try {
         browser.menus.create({ id: "action-copy-quote", title: "Copy selection with link", contexts: ["selection"] });
         browser.menus.create({ id: "action-copy-page", title: "Copy page link", contexts: ["page"] });
         browser.menus.create({ id: "action-share-page", title: "Share...", contexts: ["page", "selection"], icons: { "16": "icons/icon-48.png" } });
-    } catch (e) { console.warn("[Another Share] Menu init failed."); }
+    } catch (e) {
+        Logger.warn("Menu initialization failed.", e);
+    }
 });
 
 // Menu Clicks
@@ -255,6 +376,8 @@ browser.menus.onClicked.addListener(async (info, tab) => {
             target: { tabId: tab.id },
             func: (t) => navigator.clipboard.writeText(t),
             args: [finalText]
+        }).catch((err) => {
+            Logger.warn("Copy quote from context menu failed.", err);
         });
     } else if (info.menuItemId === "action-copy-page") {
         const finalText = `${title}\n${url}`;
@@ -262,6 +385,8 @@ browser.menus.onClicked.addListener(async (info, tab) => {
             target: { tabId: tab.id },
             func: (t) => navigator.clipboard.writeText(t),
             args: [finalText]
+        }).catch((err) => {
+            Logger.warn("Copy page from context menu failed.", err);
         });
     } else if (info.menuItemId === "action-share-page") {
         browser.tabs.sendMessage(tab.id, {
@@ -269,6 +394,8 @@ browser.menus.onClicked.addListener(async (info, tab) => {
             title: title,
             url: url,
             text: text
+        }).catch((err) => {
+            Logger.warn("Trigger share sheet from context menu failed.", err);
         });
     }
 });

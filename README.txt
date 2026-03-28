@@ -66,4 +66,4 @@ PERMISSIONS
 DEVELOPMENT
 -----------
 This version is optimized for Firefox Desktop.
-Version: 0.1.7.7
+Version: 0.1.8.3

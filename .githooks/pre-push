@@ -1,0 +1,47 @@
+#!/bin/sh
+
+set -eu
+
+repo_root=$(git rev-parse --show-toplevel)
+cd "$repo_root"
+
+term_file=$(mktemp)
+result_file=$(mktemp)
+trap 'rm -f "$term_file" "$result_file"' EXIT
+
+printf '%b\n' \
+  '\143\157\160\151\154\157\164' \
+  '\143\157\160\151\154\157\164\055\143\150\141\164' \
+  '\143\157\160\151\154\157\164\055\150\165\142' \
+  '\157\160\145\156\141\151' \
+  '\147\145\155\151\156\151' \
+  '\143\154\141\165\144\145' \
+  '\143\150\141\164\147\160\164' \
+  '\141\156\164\151\147\162\141\166\151\164\171' > "$term_file"
+
+paths=$(git ls-files --cached --others --exclude-standard)
+
+if [ -z "$paths" ]; then
+  exit 0
+fi
+
+failed=0
+
+while IFS= read -r path; do
+  [ -n "$path" ] || continue
+  [ -f "$path" ] || continue
+
+  if grep -I -n -i -f "$term_file" -- "$path" >> "$result_file" 2>/dev/null; then
+    failed=1
+  fi
+done <<EOF
+$paths
+EOF
+
+if [ "$failed" -ne 0 ]; then
+  echo "Push blocked: banned-name scan found disallowed references." >&2
+  cat "$result_file" >&2
+  exit 1
+fi
+
+exit 0

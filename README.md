@@ -33,9 +33,9 @@ This extension follows a **Minimum Viable Permissions** philosophy. Each permiss
 - **`tabs` [NEW]** (Window Management):
   - *Utility*: Required to correctly match the background script to the active window for scrolling screenshots.
   - *Privacy Standpoint*: Limited access. We only use this to retrieve the URL and Title of the current tab to prep your share post. It is never used to track your session.
-- **`host_permissions` (<all_urls>) [NEW]** (Deep Page Access):
-  - *Utility*: Grants the extension the authority to process full-page captures on any website.
-  - *Privacy Standpoint*: While this is a broad technical permission, we mitigate any risk by ensuring **zero tracking** and **fully local processing**. It is the only way to allow "Full Shot" to function.
+- **`host_permissions` (`https://*/*`) [NEW]** (Deep Page Access):
+  - *Utility*: Grants the extension authority to process full-page captures on HTTPS websites.
+  - *Privacy Standpoint*: Scope is limited to secure web pages while maintaining **zero tracking** and **fully local processing**.
 
 ## Privacy Policy
 This extension is built with a **Zero Data Collection** commitment:

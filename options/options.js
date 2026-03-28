@@ -158,6 +158,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!template || typeof template !== 'string') return false;
         const raw = template.trim();
         if (!raw || raw.length > 2048) return false;
+        // Security: Reject dangerous protocols in template itself
+        const lowerTemplate = raw.toLowerCase();
+        if (lowerTemplate.includes('javascript:') || lowerTemplate.includes('data:')) return false;
         // Template must contain placeholders or be empty
         if (!raw.includes('{url}') && !raw.includes('{title}')) return false;
         // Quick protocol check: template should produce http/https when resolved

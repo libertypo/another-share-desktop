@@ -4,16 +4,24 @@
  * and cannot directly override native APIs like navigator.share.
  */
 (function () {
+    const createNonce = () => {
+        const bytes = new Uint8Array(12);
+        crypto.getRandomValues(bytes);
+        return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+    };
+
+    const injectedScript = document.currentScript;
+    const token = injectedScript && injectedScript.dataset
+        ? injectedScript.dataset.asToken
+        : '';
+
     if (navigator.share) {
         const nativeShare = navigator.share.bind(navigator);
 
         navigator.share = async (data) => {
-            // Retrieve the token from window to prevent spoofing by hostile scripts
-            const token = window.__ANOTHER_SHARE_TOKEN__;
             if (!token) {
-                // Token not set by content script; reject the intercept
-                console.warn("Another Share Extension: Token validation failed. Rejecting share intercept.");
-                return Promise.resolve();
+                // Token not available; fall back to page native share behavior.
+                return nativeShare(data);
             }
 
             // Dispatch a custom event for the content script to pick up
@@ -21,7 +29,9 @@
                 detail: {
                     title: data.title,
                     text: data.text,
-                    url: data.url
+                    url: data.url,
+                    ts: Date.now(),
+                    nonce: createNonce()
                 }
             });
 
@@ -32,6 +42,5 @@
             return Promise.resolve();
         };
 
-        console.log("Another Share Extension: navigator.share intercepted.");
     }
 })();

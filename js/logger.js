@@ -24,18 +24,21 @@ const Logger = {
         if (this._isProcessing || this._queue.length === 0) return;
         this._isProcessing = true;
 
+        let item = null;
         try {
-            const item = this._queue.shift();
+            item = this._queue.shift();
             const { logs = [], debugLogging = false } = await browser.storage.local.get(['logs', 'debugLogging']);
 
-            if (debugLogging) {
-                console.log(`[Diagnostic] ${item.level.toUpperCase()}: ${item.message}`, item.details || '');
+            const sanitizedMessage = this._sanitizeMessage(item.message);
+            const sanitizedDetails = item.details ? this._sanitize(item.details) : null;
 
-                const sanitizedDetails = item.details ? this._sanitize(item.details) : null;
+            if (debugLogging) {
+                console.log(`[Diagnostic] ${item.level.toUpperCase()}: ${sanitizedMessage}`, sanitizedDetails || '');
+
                 const entry = {
                     timestamp: new Date().toISOString(),
                     level: item.level.toUpperCase(),
-                    message: item.message,
+                    message: sanitizedMessage,
                     details: sanitizedDetails,
                     context: (typeof window !== 'undefined' ? (window.location.pathname.split('/').pop() || 'popup') : 'background')
                 };
@@ -46,7 +49,10 @@ const Logger = {
             }
         } catch (e) {
             // Fallback for critical failures
-            if (item && item.level === 'error') console.error('Logger failed:', e);
+            if (item && item.level === 'error') {
+                const safeMessage = (e && typeof e.message === 'string') ? e.message : 'unknown logging failure';
+                console.error('Logger failed:', safeMessage);
+            }
         } finally {
             this._isProcessing = false;
             this._processQueue();
@@ -58,10 +64,14 @@ const Logger = {
      */
     _sanitize(obj) {
         if (obj instanceof Error) {
+
+            const stackFirstLine = (typeof obj.stack === 'string' && obj.stack.trim())
+                ? obj.stack.split('\n')[0]
+                : '';
             return {
                 name: obj.name,
                 message: obj.message,
-                stack: obj.stack
+                stack: stackFirstLine || '[REDACTED_STACK]'
             };
         }
 
@@ -80,6 +90,15 @@ const Logger = {
             }
         }
         return sanitized;
+    },
+
+    _sanitizeMessage(message) {
+        if (typeof message !== 'string') return '';
+        return message
+            .replace(/https?:\/\/\S+/gi, '[MASKED_URL]')
+            .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[MASKED_EMAIL]')
+            .replace(/\b[A-Za-z0-9_-]{24,}\b/g, '[MASKED_TOKEN]')
+            .slice(0, 300);
     },
 
     info(msg, details) {
@@ -103,7 +122,6 @@ const Logger = {
 
     async clear() {
         await browser.storage.local.remove('logs');
-        console.log(`[${this.SYSTEM_NAME}] Logs cleared.`);
     },
 
     async getExport() {
@@ -114,6 +132,18 @@ const Logger = {
             const detailStr = l.details ? ` | Data: ${JSON.stringify(l.details)}` : '';
             return `[${l.timestamp}] [${l.context}] [${l.level}] ${l.message}${detailStr}`;
         }).join('\n');
+    },
+
+    /**
+     * Debug helper - logs diagnostic info only if debugLogging is enabled
+     * @param {string} message - Debug message
+     */
+    async debug(msg) {
+        const { debugLogging = false } = await browser.storage.local.get('debugLogging');
+        if (debugLogging) {
+            const safeMsg = this._sanitizeMessage(msg);
+            console.log(`[Diagnostic] ${safeMsg}`);
+        }
     }
 };
 

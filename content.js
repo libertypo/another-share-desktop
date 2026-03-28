@@ -1,18 +1,32 @@
-// Patterns for hardcoded social share links
-const SOCIAL_PATTERNS = [
-    { name: 'X', pattern: /x\.com\/intent\/post|twitter\.com\/intent\/tweet/i, id: 'share-x' },
-    { name: 'WhatsApp', pattern: /wa\.me|api\.whatsapp\.com\/send/i, id: 'share-whatsapp' },
-    { name: 'Telegram', pattern: /t\.me\/share\/url/i, id: 'share-telegram' },
-    { name: 'Bluesky', pattern: /bsky\.app\/intent\/compose/i, id: 'share-bluesky' },
-    { name: 'Mastodon', pattern: /mastodonshare\.com/i, id: 'share-mastodon' },
-    { name: 'LinkedIn', pattern: /linkedin\.com\/sharing\/share-offsite/i, id: 'share-linkedin' },
-    { name: 'Facebook', pattern: /facebook\.com\/sharer/i, id: 'share-facebook' },
-    { name: 'Reddit', pattern: /reddit\.com\/submit/i, id: 'share-reddit' }
-];
+function randomToken(length = 16) {
+    const bytes = new Uint8Array(length);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+const CONTENT_EVENT_TOKEN = `extension_intercepted_share_${randomToken(12)}`;
+let interceptionEnabled = true;
+const INTERCEPT_MIN_INTERVAL_MS = 800;
+const USER_GESTURE_WINDOW_MS = 8000;
+const EVENT_FUTURE_TOLERANCE_MS = 3000;
+const EVENT_PAST_TOLERANCE_MS = 30000;
+const NONCE_MAX_AGE_MS = 60000;
+const nonceSeenAt = new Map();
+let lastInterceptAt = 0;
+let lastUserGestureAt = 0;
+
+function markUserGesture() {
+    lastUserGestureAt = Date.now();
+}
+
+window.addEventListener('pointerdown', markUserGesture, { capture: true, passive: true });
+window.addEventListener('keydown', markUserGesture, { capture: true, passive: true });
+window.addEventListener('touchstart', markUserGesture, { capture: true, passive: true });
 
 // Inject the navigator.share hijacker
 const script = document.createElement('script');
 script.src = browser.runtime.getURL('js/inject.js');
+script.dataset.asToken = CONTENT_EVENT_TOKEN;
 (document.head || document.documentElement).appendChild(script);
 script.onload = () => script.remove();
 
@@ -212,6 +226,35 @@ function showShareSheet(title, url, text) {
             const platforms = response.platforms;
             sheetObj.grid.textContent = '';
             const parser = new DOMParser();
+
+            const createPlatformIcon = (iconMarkup, platformTitle) => {
+                const iconDiv = document.createElement('div');
+                iconDiv.className = 'icon';
+
+                if (typeof iconMarkup === 'string' && iconMarkup.trim()) {
+                    const htmlDoc = parser.parseFromString(iconMarkup, 'text/html');
+                    const svgFromHtml = htmlDoc.querySelector('svg');
+                    if (svgFromHtml) {
+                        iconDiv.appendChild(document.importNode(svgFromHtml, true));
+                        return iconDiv;
+                    }
+
+                    const xmlDoc = parser.parseFromString(iconMarkup, 'image/svg+xml');
+                    const svgFromXml = xmlDoc.documentElement;
+                    if (svgFromXml && svgFromXml.tagName && svgFromXml.tagName.toLowerCase() === 'svg') {
+                        iconDiv.appendChild(document.importNode(svgFromXml, true));
+                        return iconDiv;
+                    }
+                }
+
+                const fallback = document.createElement('span');
+                fallback.textContent = (platformTitle || '?').slice(0, 1).toUpperCase();
+                fallback.style.fontWeight = '700';
+                fallback.style.fontSize = '18px';
+                iconDiv.appendChild(fallback);
+                return iconDiv;
+            };
+
             Object.keys(platforms).forEach(id => {
                 if (id === 'share-copy' || id === 'share-custom' || id === 'share-email') return;
 
@@ -221,13 +264,7 @@ function showShareSheet(title, url, text) {
                     item.title = platforms[id].tooltip;
                 }
 
-                const iconDiv = document.createElement('div');
-                iconDiv.className = 'icon';
-                const svgDoc = parser.parseFromString(platforms[id].icon, 'image/svg+xml');
-                const svgElement = svgDoc.documentElement;
-                if (svgElement && svgElement.tagName.toLowerCase() === 'svg') {
-                    iconDiv.appendChild(svgElement);
-                }
+                const iconDiv = createPlatformIcon(platforms[id].icon, platforms[id].title);
 
                 const titleSpan = document.createElement('span');
                 titleSpan.textContent = platforms[id].title;
@@ -295,14 +332,36 @@ function showShareSheet(title, url, text) {
 Logger.info("Another Share Content Script Loaded.");
 
 // Privacy: Skip sensitive domains
-const MODERATE_PROTECTION_LIST = ['bank', 'paypal', 'stripe', 'gov', 'mil', 'healthcare'];
-const PRIVACY_PROTECTION_LIST = [...MODERATE_PROTECTION_LIST, 'ledger', 'trezor', 'coinbase', 'binance', 'mychart', 'epic', 'police', 'interpol', 'proton.me', 'tutanota', 'bitwarden', '1password', 'lastpass'];
+const MODERATE_PROTECTION_KEYWORDS = ['bank', 'healthcare'];
+const MODERATE_PROTECTION_DOMAINS = ['paypal.com', 'stripe.com', 'gov', 'mil'];
+const PRIVACY_PROTECTION_KEYWORDS = [...MODERATE_PROTECTION_KEYWORDS, 'police', 'interpol'];
+const PRIVACY_PROTECTION_DOMAINS = [
+    ...MODERATE_PROTECTION_DOMAINS,
+    'ledger.com',
+    'trezor.io',
+    'coinbase.com',
+    'binance.com',
+    'mychart.com',
+    'epic.com',
+    'proton.me',
+    'tutanota.com',
+    'bitwarden.com',
+    '1password.com',
+    'lastpass.com'
+];
+
+function matchesDomainOrSuffix(domain, rule) {
+    if (!rule) return false;
+    return domain === rule || domain.endsWith(`.${rule}`);
+}
 
 function isSensitiveSite(level = 'strict') {
     try {
         const domain = window.location.hostname.toLowerCase();
-        const list = level === 'moderate' ? MODERATE_PROTECTION_LIST : PRIVACY_PROTECTION_LIST;
-        return list.some(p => domain.includes(p));
+        const labels = domain.split('.').filter(Boolean);
+        const keywords = level === 'moderate' ? MODERATE_PROTECTION_KEYWORDS : PRIVACY_PROTECTION_KEYWORDS;
+        const domains = level === 'moderate' ? MODERATE_PROTECTION_DOMAINS : PRIVACY_PROTECTION_DOMAINS;
+        return keywords.some((keyword) => labels.includes(keyword)) || domains.some((rule) => matchesDomainOrSuffix(domain, rule));
     } catch (e) {
         return true;
     }
@@ -341,6 +400,11 @@ function showContentToast(message) {
     }, 3000);
 }
 
+function sanitizeToastMessage(value, maxLength = 300) {
+    if (typeof value !== 'string') return '';
+    return value.trim().slice(0, maxLength);
+}
+
 // Extract metadata from the page
 function getMetadata() {
     const getMeta = (name) => {
@@ -363,6 +427,8 @@ function sanitizeInterceptedShareDetail(detail) {
     const title = typeof detail.title === 'string' ? detail.title.trim().slice(0, 400) : '';
     const text = typeof detail.text === 'string' ? detail.text.trim().slice(0, 12000) : '';
     const url = typeof detail.url === 'string' ? detail.url.trim().slice(0, 2048) : '';
+    const ts = Number.isFinite(detail.ts) ? detail.ts : 0;
+    const nonce = typeof detail.nonce === 'string' ? detail.nonce.trim().slice(0, 64) : '';
 
     if (url) {
         try {
@@ -373,22 +439,67 @@ function sanitizeInterceptedShareDetail(detail) {
         }
     }
 
-    return { title, text, url };
+    return { title, text, url, ts, nonce };
+}
+
+function isTrustedInterceptPayload(payload) {
+    if (!payload || typeof payload !== 'object') return false;
+
+    const hasMeaningfulContent = Boolean(payload.title || payload.text || payload.url);
+    if (!hasMeaningfulContent) return false;
+
+    // Require a URL for intercepted navigator.share payloads to reduce spoof-only text events.
+    if (!payload.url) return false;
+
+    if (payload.url) {
+        try {
+            const shared = new URL(payload.url);
+            const current = new URL(window.location.href);
+            // Bound intercepted shares to the current page URL shape.
+            if (shared.origin !== current.origin) return false;
+            if (shared.pathname !== current.pathname) return false;
+            if (shared.search !== current.search) return false;
+        } catch {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+function isAllowedRuntimeSender(sender) {
+    return !!sender && sender.id === browser.runtime.id;
+}
+
+function hasFreshNonce(nonce, now) {
+    if (typeof nonce !== 'string' || nonce.length < 8) return false;
+
+    for (const [knownNonce, seenAt] of nonceSeenAt.entries()) {
+        if (now - seenAt > NONCE_MAX_AGE_MS) {
+            nonceSeenAt.delete(knownNonce);
+        }
+    }
+
+    if (nonceSeenAt.has(nonce)) return false;
+    nonceSeenAt.set(nonce, now);
+    return true;
 }
 
 const CONTENT_ALLOWED_ACTIONS = new Set(["getMetadata", "notifyThread", "triggerShareSheet"]);
-const CONTENT_EVENT_TOKEN = 'extension_intercepted_share_' + Math.random().toString(36).slice(2, 15);
 
 // Listen for messages from the popup or background
 browser.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (!request || typeof request !== 'object' || !CONTENT_ALLOWED_ACTIONS.has(request.action)) return false;
+    if (!isAllowedRuntimeSender(sender) || !request || typeof request !== 'object' || !CONTENT_ALLOWED_ACTIONS.has(request.action)) return false;
 
     if (request.action === "getMetadata") {
         Logger.info("Content script metadata requested.");
         sendResponse(getMetadata());
     }
     if (request.action === "notifyThread") {
-        showContentToast("🧵 " + request.message);
+        const safeMessage = sanitizeToastMessage(request.message);
+        if (safeMessage) {
+            showContentToast("🧵 " + safeMessage);
+        }
     }
     if (request.action === "triggerShareSheet") {
         Logger.info("Background requested Share Sheet.");
@@ -396,27 +507,59 @@ browser.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 });
 
+// Listen for intercepted Navigator Share early to avoid race conditions.
+window.addEventListener(CONTENT_EVENT_TOKEN, (e) => {
+    if (!interceptionEnabled) return;
+    const payload = sanitizeInterceptedShareDetail(e.detail);
+    if (!payload) return;
+
+    if (!isTrustedInterceptPayload(payload)) {
+        Logger.warn('Blocked intercepted share due to untrusted payload.');
+        return;
+    }
+
+    const now = Date.now();
+    const sinceLastIntercept = now - lastInterceptAt;
+    if (sinceLastIntercept >= 0 && sinceLastIntercept < INTERCEPT_MIN_INTERVAL_MS) {
+        Logger.warn('Blocked intercepted share due to rapid repeat.');
+        return;
+    }
+
+    if (payload.ts) {
+        const skew = now - payload.ts;
+        if (skew < -EVENT_FUTURE_TOLERANCE_MS || skew > EVENT_PAST_TOLERANCE_MS) {
+            Logger.warn('Blocked intercepted share due to stale/future timestamp.');
+            return;
+        }
+    }
+
+    if (!hasFreshNonce(payload.nonce, now)) {
+        Logger.warn('Blocked intercepted share due to missing/replayed nonce.');
+        return;
+    }
+
+    const sinceGesture = now - lastUserGestureAt;
+    if (sinceGesture >= 0 && sinceGesture > USER_GESTURE_WINDOW_MS) {
+        Logger.warn('Blocked intercepted share without recent user gesture.');
+        return;
+    }
+
+    lastInterceptAt = now;
+    Logger.info("Intercepted navigator.share call.");
+    showShareSheet(payload.title, payload.url, payload.text);
+});
+
 async function initialize() {
     const settings = await browser.storage.local.get('securityLevel');
     const level = settings.securityLevel || 'strict';
 
     if (isSensitiveSite(level)) {
+        interceptionEnabled = false;
         Logger.info("Security: Disabling interception on sensitive site (" + level + ").");
         return;
     }
 
-    const tokenScript = document.createElement('script');
-    tokenScript.textContent = `window.__ANOTHER_SHARE_TOKEN__ = '${CONTENT_EVENT_TOKEN}';`;
-    (document.head || document.documentElement).appendChild(tokenScript);
-    tokenScript.remove();
-
-    // Listen for intercepted Navigator Share
-    window.addEventListener(CONTENT_EVENT_TOKEN, (e) => {
-        Logger.info("Intercepted navigator.share call.");
-        const payload = sanitizeInterceptedShareDetail(e.detail);
-        if (!payload) return;
-        showShareSheet(payload.title, payload.url, payload.text);
-    });
+    interceptionEnabled = true;
 }
 
 initialize();

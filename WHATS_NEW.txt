@@ -1,5 +1,15 @@
 Another Share - Version History
 
+v0.1.8.3
+- Version bump for the current release build.
+- Removed older packaged artifacts.
+- Rebuilt the Firefox extension package.
+
+v0.1.8.1
+- Version bump for the cleaned, hardened repository layout.
+- Rebuilt release package from the current codebase.
+- Maintained the security hardening for permissions, message validation, and share interception.
+
 v0.1.8.0
 - Comprehensive Privacy & Security Audit:
   * Replaced all legacy `innerHTML` usage with safer DOM manipulation (`textContent`) to prevent XSS vulnerabilities.

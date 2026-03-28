@@ -8,8 +8,14 @@ Object.freeze(TRACKING_PARAMS);
 const PLATFORMS = PLATFORMS_DATA;
 Object.freeze(PLATFORMS);
 
+const EXTENSION_VERSION = (browser && browser.runtime && browser.runtime.getManifest)
+    ? browser.runtime.getManifest().version
+    : 'unknown';
+
 const DEFAULT_ORDER = Object.keys(PLATFORMS).filter(id => id !== 'share-custom');
 const RESERVED_INTRO = "\n\n\n";
+const BLUESKY_COMPOSE_URL = 'https://bsky.app/intent/compose?text=';
+const X_INTENT_URL = 'https://twitter.com/intent/tweet';
 
 function cleanUrl(urlStr) {
     if (urlStr.startsWith('file://')) {
@@ -66,6 +72,61 @@ function buildCustomShareUrl(template, encodedUrl, encodedTitle) {
     return isAllowedShareTarget(resolved) ? resolved : '';
 }
 
+function truncateForPlatformLimit(text, limit) {
+    if (typeof text !== 'string' || !Number.isFinite(limit) || limit <= 0) {
+        return typeof text === 'string' ? text : '';
+    }
+    if (text.length <= limit) return text;
+    if (limit <= 1) return text.slice(0, limit);
+    return `${text.slice(0, limit - 1)}…`;
+}
+
+function buildBlueskyShareText(title, url, quote) {
+    const body = quote ? `"${quote}" — ${title}` : title;
+    return url ? `${body} ${url}` : body;
+}
+
+function buildBlueskyComposeUrl(shareText) {
+    const normalized = typeof shareText === 'string' ? shareText : '';
+    return `${BLUESKY_COMPOSE_URL}${encodeURIComponent(normalized)}`;
+}
+
+function buildXShareText(title, quote, shareUrl) {
+    if (quote) {
+        return shareUrl ? `"${quote}" ${shareUrl}` : `"${quote}" — ${title}`;
+    }
+    if (shareUrl) {
+        // Keep URL-only shares compact; X link card already provides title/metadata.
+        return shareUrl;
+    }
+    return title;
+}
+
+async function openBlueskyShare(title, url, quote, { successMessage, closePopup = false } = {}) {
+    const blueskyLimit = (PLATFORMS['share-bluesky'] && PLATFORMS['share-bluesky'].limit) || 300;
+    const shareText = truncateForPlatformLimit(buildBlueskyShareText(title, url, quote), blueskyLimit);
+
+    let copiedToClipboard = false;
+    try {
+        await navigator.clipboard.writeText(shareText);
+        copiedToClipboard = true;
+    } catch (error) {
+        Logger.warn('Bluesky clipboard copy failed; continuing with compose URL.', error);
+    }
+
+    await browser.tabs.create({ url: buildBlueskyComposeUrl(shareText) });
+
+    showToast(
+        successMessage || (copiedToClipboard
+            ? 'Bluesky compose opened. Text was also copied.'
+            : 'Bluesky compose opened with prefilled text.'),
+        'success'
+    );
+    if (closePopup) {
+        setTimeout(() => window.close(), 900);
+    }
+}
+
 function showToast(message, type = 'info') {
     const toast = document.getElementById('toast');
     toast.textContent = message;
@@ -113,7 +174,13 @@ function chunkText(quote, platformId, title, url) {
     while (remaining.length > 0) {
         const introPart = (partNum === 1) ? RESERVED_INTRO : "";
         const reserved = title.length + introPart.length + (partNum === 1 ? urlLen + 18 : 16);
-        const maxChunkLen = config.limit - reserved;
+        let maxChunkLen = config.limit - reserved;
+
+        // Safety guard: avoid non-progress loops when metadata exceeds platform limits.
+        if (maxChunkLen <= 0) {
+            const hardCap = Math.max(20, Math.floor(config.limit * 0.5));
+            maxChunkLen = Math.min(remaining.length, hardCap);
+        }
 
         if (remaining.length <= maxChunkLen) {
             chunks.push(remaining);
@@ -123,6 +190,11 @@ function chunkText(quote, platformId, title, url) {
         let cutIdx = maxChunkLen;
         const lastSpace = remaining.lastIndexOf(' ', maxChunkLen);
         if (lastSpace > maxChunkLen * 0.7) cutIdx = lastSpace;
+
+        // Ensure forward progress even with malformed/edge inputs.
+        if (cutIdx <= 0) {
+            cutIdx = Math.min(remaining.length, Math.max(20, maxChunkLen));
+        }
 
         chunks.push(remaining.substring(0, cutIdx).trim());
         remaining = remaining.substring(cutIdx).trim();
@@ -158,7 +230,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     let threadPlatform = '';
 
     Logger.info("====================================");
-    Logger.info("STARTING ANOTHER SHARE v0.1.7.7");
+    Logger.info(`STARTING ANOTHER SHARE v${EXTENSION_VERSION}`);
     Logger.info("Environment: Desktop");
     Logger.info("====================================");
 
@@ -287,10 +359,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             displayUrl = `about:reader?url=${encodeURIComponent(articleUrl)}`;
         }
 
-        const total = (selectedText ? `"${selectedText}" — `.length : 0) +
-            articleTitle.length +
-            (platformId === 'share-copy' || platformId === 'share-email' ? 0 : (displayUrl ? (platform.urlWeight || displayUrl.length) : 0)) +
-            RESERVED_INTRO.length;
+        let total;
+        if (platformId === 'share-x') {
+            total = buildXShareText(articleTitle, selectedText, displayUrl).length;
+        } else {
+            const introLen = RESERVED_INTRO.length;
+            total = (selectedText ? `"${selectedText}" — `.length : 0) +
+                articleTitle.length +
+                (platformId === 'share-copy' || platformId === 'share-email' ? 0 : (displayUrl ? (platform.urlWeight || displayUrl.length) : 0)) +
+                introLen;
+        }
 
         charCounter.textContent = total;
         charCounter.className = 'char-counter' + (total > limit ? ' overflow' : (total > limit * 0.9 ? ' warning' : ''));
@@ -315,8 +393,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         const templates = {
-            'share-x': `https://x.com/intent/post?text=${encodeURIComponent(q ? `${RESERVED_INTRO}"${q}" — ${t}${textOnlyUrl ? ` ${textOnlyUrl}` : ""}` : `${RESERVED_INTRO}${t}${textOnlyUrl ? ` ${textOnlyUrl}` : ""}`)}${publicUrl ? `&url=${encodeURIComponent(publicUrl)}` : ""}`,
-            'share-bluesky': `https://bsky.app/intent/compose?text=${encodeURIComponent(q ? `${RESERVED_INTRO}"${q}" — ${t}${u ? ` ${u}` : ""}` : `${RESERVED_INTRO}${t}${u ? ` ${u}` : ""}`)}`,
+            'share-x': `${X_INTENT_URL}?text=${encodeURIComponent(buildXShareText(t, q, textOnlyUrl || publicUrl))}`,
+            'share-bluesky': buildBlueskyComposeUrl(truncateForPlatformLimit(buildBlueskyShareText(t, u, q), (PLATFORMS['share-bluesky'] && PLATFORMS['share-bluesky'].limit) || 300)),
             'share-mastodon': `https://mastodonshare.com/?text=${encodeURIComponent(q ? `${RESERVED_INTRO}"${q}" — ${t}${u ? ` ${u}` : ""}` : `${RESERVED_INTRO}${t}${u ? ` ${u}` : ""}`)}${publicUrl ? `&url=${encodeURIComponent(publicUrl)}` : ""}`,
             'share-whatsapp': `https://wa.me/?text=${encodeURIComponent(q ? `${RESERVED_INTRO}"${q}"\n\n${t}${u ? ` ${u}` : ""}` : `${RESERVED_INTRO}${t}${u ? ` ${u}` : ""}`)}`,
             'share-telegram': `https://t.me/share/url?text=${encodeURIComponent(q ? `${RESERVED_INTRO}"${q}"\n\n${t}${textOnlyUrl ? `\n\n${textOnlyUrl}` : ""}` : `${RESERVED_INTRO}${t}${textOnlyUrl ? `\n\n${textOnlyUrl}` : ""}`)}${publicUrl ? `&url=${encodeURIComponent(publicUrl)}` : ""}`,
@@ -346,6 +424,34 @@ document.addEventListener('DOMContentLoaded', async () => {
         const currentHumanNum = isFromContextMenu ? currentThreadIdx + 2 : currentThreadIdx + 1;
 
         if (chunk.type === 'intent') {
+            if (threadPlatform === 'share-bluesky') {
+                try {
+                    await openBlueskyShare(chunk.meta, articleUrl, chunk.text, {
+                        successMessage: 'Part 1 opened in Bluesky compose.',
+                        closePopup: false
+                    });
+                } catch (error) {
+                    Logger.error('Bluesky share failed', error);
+                    showToast('Unable to prepare Bluesky post.', 'error');
+                    return;
+                }
+
+                currentThreadIdx++;
+                await browser.storage.local.set({ currentThreadIdx });
+                btnSplitStart.textContent = `Copy Part ${currentThreadIdx + 1}`;
+
+                threadMsg.textContent = "";
+                const b = document.createElement('b');
+                b.textContent = 'Part 1 Copied!';
+                const br = document.createElement('br');
+                const span = document.createElement('span');
+                span.textContent = 'Paste it into Bluesky, publish it, then click here for Part 2.';
+                threadMsg.appendChild(b);
+                threadMsg.appendChild(br);
+                threadMsg.appendChild(span);
+                return;
+            }
+
             const shareUrl = getShareUrl(threadPlatform, chunk.meta, articleUrl, chunk.text);
             
             const allowMailto = threadPlatform === 'share-email';
@@ -429,7 +535,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (svgElement) {
                 wrapper.appendChild(document.importNode(svgElement, true));
             }
-        } catch (e) { console.error("SVG Parse failed", e); }
+        } catch (e) {
+            Logger.warn("SVG icon parse failed in popup.", e);
+        }
         btn.appendChild(wrapper);
         btn.addEventListener('mouseenter', () => updateCounter(id));
         btn.addEventListener('click', async () => {
@@ -495,6 +603,21 @@ document.addEventListener('DOMContentLoaded', async () => {
                     return;
                 }
             }
+
+            if (id === 'share-bluesky') {
+                Logger.info('Action: Bluesky share prepared via clipboard fallback.');
+                try {
+                    await openBlueskyShare(articleTitle, finalUrl, selectedText, {
+                        successMessage: 'Bluesky compose opened with your text.',
+                        closePopup: true
+                    });
+                } catch (error) {
+                    Logger.error('Bluesky share failed', error);
+                    showToast('Unable to prepare Bluesky post.', 'error');
+                }
+                return;
+            }
+
             const url = getShareUrl(id, articleTitle, finalUrl, selectedText);
             if (!url) {
                 Logger.warn(`Local file share attempted on incompatible platform: ${id}`);
@@ -527,7 +650,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             Logger.info("Starting Full Thread Diagnostic Extraction...");
             const res = await browser.scripting.executeScript({
                 target: { tabId: tab.id }, func: () => {
-                    console.log("[Diagnostic] Content Script Started");
                     const selector = 'article, main, [role="main"], #content, .post, .article';
                     const target = document.querySelector(selector) || document.body;
                     const validTags = ['H1', 'H2', 'H3', 'P', 'LI'];
@@ -540,8 +662,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                         return el.innerText.trim().length > 0;
                     });
                     const text = filtered.map(el => el.innerText.trim()).join('\n\n');
-
-                    console.log(`[Diagnostic] Capture done. Length: ${text.length}`);
                     return {
                         text: text.slice(0, 100000),
                         originalLength: text.length,
@@ -576,7 +696,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         } catch (e) {
             Logger.error("Full Thread Crash Intercepted:", e);
-            showToast("Extraction failed: " + e.message, "error");
+            showToast("Extraction failed. Please try again.", "error");
         }
     });
 
@@ -608,7 +728,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             showCaptureProposal(normalizedUrl, `screenshot-${Date.now()}.${format === 'image/png' ? 'png' : 'jpg'}`);
         } catch (e) {
             Logger.error("Viewport Screenshot failed", e);
-            showToast(`Capture failed: ${e.message}`, "error");
+            showToast("Capture failed. Please try again.", "error");
         }
     });
 
@@ -644,9 +764,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             });
 
-            if (!res || !res[0] || !res[0].result) throw new Error("No response from script.");
+            if (!res || !res[0] || !res[0].result) {
+                Logger.error("Text extraction failed: No response from script");
+                showToast("Unable to extract text. Please try again.", "error");
+                return;
+            }
             const result = res[0].result;
-            if (result.error) throw new Error(result.error);
+            if (result.error) {
+                Logger.warn("Text extraction error", result.error);
+                showToast("Unable to extract text. Please try again.", "error");
+                return;
+            }
 
             const content = result.text || "";
             Logger.info(`Text Cleaned. Size: ${content.length} chars. (Original: ${result.len})`);
@@ -662,7 +790,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             showToast("Clean text saved!", "success");
         } catch (e) {
             Logger.error("Clean Text Crash Intercepted:", e);
-            showToast("Extraction failed: " + e.message, "error");
+            showToast("Extraction failed. Please try again.", "error");
         }
     });
 
@@ -759,7 +887,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             showCaptureProposal(canvas.toDataURL(format === 'image/jpeg' ? 'image/jpeg' : 'image/png'), `full-capture-${Date.now()}.png`);
         } catch (e) {
             Logger.error("Full Page Scrolling Capture failed", e);
-            showToast(`Capture Error: ${e.message}`, "error");
+            showToast("Capture failed. Please try again.", "error");
         }
     });
 
@@ -780,10 +908,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     document.getElementById('btn-print').addEventListener('click', () => {
         Logger.info("Capture Preview: User clicked Print.");
-        const printWin = window.open('print.html');
-        printWin.onload = () => {
-            printWin.document.getElementById('print-image').src = currentCaptureData;
-            printWin.print();
-        };
+        const key = `print_capture_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
+        browser.storage.local.set({ [key]: currentCaptureData }).then(() => {
+            window.open(`print.html?key=${encodeURIComponent(key)}`, '_blank', 'noopener,noreferrer');
+        }).catch((error) => {
+            Logger.error('Failed to prepare print preview data.', error);
+            showToast('Unable to open print preview.', 'error');
+        });
     });
 });
