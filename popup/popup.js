@@ -1,8 +1,4 @@
-const TRACKING_PARAMS = [
-    'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
-    'fbclid', 'gclid', 'gclsrc', 'dclid', 'msclkid', 'mc_cid', 'mc_eid',
-    '_ga', '_gl', 'yclid', 'ref', 'source', 'original_referrer'
-];
+const TRACKING_PARAMS = ExtensionUtils.TRACKING_PARAMS;
 Object.freeze(TRACKING_PARAMS);
 
 const PLATFORMS = PLATFORMS_DATA;
@@ -18,45 +14,26 @@ const BLUESKY_COMPOSE_URL = 'https://bsky.app/intent/compose?text=';
 const X_INTENT_URL = 'https://twitter.com/intent/tweet';
 
 function cleanUrl(urlStr) {
-    if (urlStr.startsWith('file://')) {
+    if (!urlStr || urlStr.startsWith('file://')) {
         return { url: '', cleaned: true, isLocal: true, originalUrl: urlStr };
     }
-    try {
-        const url = new URL(urlStr);
-        let cleaned = false;
-        TRACKING_PARAMS.forEach(param => {
-            if (url.searchParams.has(param)) {
-                url.searchParams.delete(param);
-                cleaned = true;
-            }
-        });
-        return { url: url.toString(), cleaned };
-    } catch (e) {
-        return { url: urlStr, cleaned: false };
-    }
+    const normalized = ExtensionUtils.normalizeTrackedUrl(urlStr);
+    return {
+        url: normalized,
+        cleaned: normalized !== urlStr,
+        isLocal: false,
+        originalUrl: urlStr
+    };
 }
 
 function isRestrictedUrl(url) {
-    if (!url) return true;
-    const restricted = ['about:', 'moz-extension:', 'view-source:', 'resource:', 'chrome:', 'jar:', 'data:'];
-    if (restricted.some(protocol => url.startsWith(protocol))) return true;
-    if (url.includes('addons.mozilla.org')) return true;
-    return false;
+    return ExtensionUtils.isRestrictedUrl(url);
 }
 
 function isAllowedShareTarget(url, { allowMailto = false } = {}) {
     if (typeof url !== 'string' || !url) return false;
-
-    if (allowMailto && url.startsWith('mailto:')) {
-        return true;
-    }
-
-    try {
-        const parsed = new URL(url);
-        return parsed.protocol === 'http:' || parsed.protocol === 'https:';
-    } catch {
-        return false;
-    }
+    if (allowMailto && url.startsWith('mailto:')) return true;
+    return ExtensionUtils.isAllowedHttpUrl(url);
 }
 
 function buildCustomShareUrl(template, encodedUrl, encodedTitle) {

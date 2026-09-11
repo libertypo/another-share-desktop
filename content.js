@@ -430,14 +430,7 @@ function sanitizeInterceptedShareDetail(detail) {
     const ts = Number.isFinite(detail.ts) ? detail.ts : 0;
     const nonce = typeof detail.nonce === 'string' ? detail.nonce.trim().slice(0, 64) : '';
 
-    if (url) {
-        try {
-            const parsed = new URL(url);
-            if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
-        } catch {
-            return null;
-        }
-    }
+    if (url && !ExtensionUtils.isAllowedHttpUrl(url)) return null;
 
     return { title, text, url, ts, nonce };
 }

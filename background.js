@@ -21,7 +21,15 @@ const TRACKING_PARAMS = [
     '_ga', '_gl', 'yclid', 'ref', 'source', 'original_referrer'
 ];
 
-const ALLOWED_ACTIONS = new Set(["getPlatforms", "addToReadLater", "captureVisible", "performShare"]);
+const ALLOWED_ACTIONS = new Set([
+    "getPlatforms",
+    "addToReadLater",
+    "captureVisible",
+    "performShare",
+    "setReadLaterPassphrase",
+    "clearReadLaterPassphrase",
+    "getReadLater"
+]);
 const BLUESKY_COMPOSE_URL = "https://bsky.app/intent/compose?text=";
 const X_INTENT_URL = "https://twitter.com/intent/tweet";
 const MAX_CAPTURE_MB = 12;
@@ -29,6 +37,7 @@ const MAX_CAPTURE_MB = 12;
 // Rate limiting map for share actions (prevents rapid-fire posting)
 const shareRateLimits = new Map();
 const SHARE_RATE_LIMIT_MS = 500; // Throttle shares to 500ms apart per platform
+let readLaterPassphrase = '';
 
 function isObject(value) {
     return typeof value === "object" && value !== null;
@@ -95,36 +104,15 @@ async function openBlueskyShareFallback(sender, title, url, quote, message) {
 }
 
 function isAllowedHttpUrl(url) {
-    if (!url) return false;
-    try {
-        const parsed = new URL(url);
-        return parsed.protocol === "http:" || parsed.protocol === "https:";
-    } catch {
-        return false;
-    }
+    return ExtensionUtils.isAllowedHttpUrl(url);
 }
 
 function sanitizeReadLaterItem(item) {
-    if (!isObject(item)) return null;
-
-    const title = sanitizeString(item.title, 400);
-    const url = sanitizeString(item.url, 2048);
-    const timestamp = Number.isFinite(item.timestamp) ? item.timestamp : Date.now();
-
-    if (!isAllowedHttpUrl(url)) return null;
-
-    return { title, url, timestamp };
+    return ExtensionUtils.sanitizeStorageItem(item);
 }
 
 function cleanUrl(urlStr) {
-    if (!urlStr || urlStr.startsWith('file://')) return '';
-    try {
-        const url = new URL(urlStr);
-        TRACKING_PARAMS.forEach(param => {
-            if (url.searchParams.has(param)) url.searchParams.delete(param);
-        });
-        return url.toString();
-    } catch (e) { return urlStr; }
+    return ExtensionUtils.normalizeTrackedUrl(urlStr);
 }
 
 const platforms = {
@@ -179,25 +167,65 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return false;
     }
 
+    if (message.action === "setReadLaterPassphrase") {
+        const passphrase = typeof message.passphrase === 'string' ? message.passphrase.trim() : '';
+        readLaterPassphrase = passphrase;
+        return false;
+    }
+
+    if (message.action === "clearReadLaterPassphrase") {
+        readLaterPassphrase = '';
+        return false;
+    }
+
+    if (message.action === "getReadLater") {
+        (async () => {
+            try {
+                const { readLater = [] } = await browser.storage.local.get('readLater');
+                let items = Array.isArray(readLater) ? readLater : [];
+
+                if (readLater && readLater.encrypted && readLater.payload) {
+                    items = await ExtensionUtils.decryptStoredData(readLater, readLaterPassphrase);
+                    if (!Array.isArray(items)) {
+                        items = [];
+                    }
+                }
+
+                sendResponse({ items });
+            } catch (error) {
+                Logger.warn('Read later retrieval failed.', error);
+                sendResponse({ items: [] });
+            }
+        })();
+        return true;
+    }
+
     if (message.action === "addToReadLater") {
         const item = sanitizeReadLaterItem(message.item);
         if (!item) return false;
 
-        browser.storage.local.get('readLater').then(data => {
+        browser.storage.local.get('readLater').then(async data => {
             let readLater = data.readLater || [];
 
-            // Deduplicate: Remove existing entry with same URL if present, so we can bump it to top
-            readLater = readLater.filter(i => i.url !== item.url);
+            if (readLater && readLater.encrypted && readLater.payload) {
+                const decrypted = await ExtensionUtils.decryptStoredData(readLater, readLaterPassphrase);
+                readLater = Array.isArray(decrypted) ? decrypted : [];
+            } else if (!Array.isArray(readLater)) {
+                readLater = [];
+            }
 
-            // Add to front
+            readLater = readLater.filter(i => i.url !== item.url);
             readLater.unshift(item);
 
-            // Enforce limit of 50, removing oldest (from end)
             while (readLater.length > 50) {
                 readLater.pop();
             }
 
-            browser.storage.local.set({ readLater });
+            const finalValue = readLaterPassphrase
+                ? await ExtensionUtils.encryptStoredData(readLater, readLaterPassphrase)
+                : readLater;
+
+            browser.storage.local.set({ readLater: finalValue });
         });
         return false;
     }
@@ -249,7 +277,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const cleanedUrl = cleanUrl(url);
         const config = PLATFORMS_DATA[platformId];
 
-        if (platformId === "share-bluesky") {
+            if (platformId === "share-bluesky") {
             if (config && config.limit && text && text.length > config.limit - 50) {
                 const chunks = chunkText(text, platformId, title, cleanedUrl);
                 if (chunks.length > 1) {
@@ -278,7 +306,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 const chunks = chunkText(text, platformId, title, cleanedUrl);
                 if (chunks.length > 1) {
                     const threadUrl = platforms[pureId](title, cleanedUrl, chunks[0].text);
-                    if (!isAllowedHttpUrl(threadUrl) || !hasValidTab(sender)) return false;
+                    if (!ExtensionUtils.isAllowedHttpUrl(threadUrl) || !hasValidTab(sender)) return false;
 
                     browser.tabs.create({ url: threadUrl });
                     // Notify user via content script
@@ -300,7 +328,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 }
             }
             const shareUrl = platforms[pureId](title, cleanedUrl, text);
-            if (!isAllowedHttpUrl(shareUrl)) return false;
+            if (!ExtensionUtils.isAllowedHttpUrl(shareUrl)) return false;
             browser.tabs.create({ url: shareUrl });
         }
         return false;

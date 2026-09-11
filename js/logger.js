@@ -60,7 +60,9 @@ const Logger = {
     },
 
     /**
-     * Strips URLs, Titles, and Selections from metadata objects
+     * Strips URLs, titles, and selections from metadata objects before they are stored.
+     * Errors are still logged to the console when debug logging is off, but only persisted
+     * when the user explicitly enables debug logging.
      */
     _sanitize(obj) {
         if (obj instanceof Error) {
@@ -110,13 +112,11 @@ const Logger = {
     },
 
     error(msg, details) {
-        // Errors are critical, so we might want to ensure they are seen even if debug is off, 
-        // but for strict silence we rely on debugLogging. 
-        // However, usually errors should always be printable to console for debugging even if not stored.
-        // But user said "logging although disabled".
-        // Let's compromise: Errors always to console? Or strictly follow the flag?
-        // User asked to disable logging.
-        // I will make info/warn strict. 
+        const safeMsg = this._sanitizeMessage(msg);
+        const safeDetails = details ? this._sanitize(details) : null;
+        // Error events are always printed to the console for triage, but they are only
+        // persisted when the user explicitly enables debug logging.
+        console.error(`[Diagnostic] ${safeMsg}`, safeDetails || '');
         return this._record('error', msg, details);
     },
 

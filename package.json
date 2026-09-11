@@ -1,12 +1,12 @@
 {
     "name": "shareflow-addon",
-    "version": "0.1.8.3",
+    "version": "0.1.8.4",
     "description": "Premium article sharing extension for Firefox.",
     "scripts": {
         "start": "web-ext run",
         "build": "web-ext build --ignore-files $(tr '\n' ' ' < .webextignore)",
         "lint": "web-ext lint",
-        "test": "npm run lint",
+        "test": "npm run lint && node --test test/security.test.js",
         "security:audit": "npm audit"
     },
     "devDependencies": {

@@ -116,8 +116,16 @@
         <h1>Read Later</h1>
         <button id="clear-btn" class="clear-btn">Clear All</button>
     </header>
+
+    <div class="toolbar" style="margin-bottom: 16px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+        <input id="passphrase" type="password" placeholder="Optional passphrase for this list" style="flex: 1; min-width: 180px; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--card-bg); color: var(--text-color);" />
+        <button id="unlock-btn" class="clear-btn" type="button">Unlock</button>
+        <button id="lock-btn" class="clear-btn" type="button">Lock</button>
+    </div>
+    <div id="status" style="font-size: 12px; color: var(--secondary-text); margin-bottom: 12px; min-height: 18px;"></div>
     <ul id="list"></ul>
 
+    <script src="../js/utils.js"></script>
     <script src="read_later.js"></script>
 </body>
 
